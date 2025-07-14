@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { Send, Loader2 } from "lucide-react";
 import { ChatMessage } from "~/components/chat-message";
@@ -7,11 +8,22 @@ import { SignInModal } from "~/components/sign-in-modal";
 
 interface ChatProps {
   userName: string;
+  isAuthenticated: boolean;
 }
 
-export const ChatPage = ({ userName }: ChatProps) => {
+export const ChatPage = ({ userName, isAuthenticated }: ChatProps) => {
   const { messages, input, handleInputChange, handleSubmit, isLoading } =
     useChat();
+  const [showSignInModal, setShowSignInModal] = useState(false);
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    if (!isAuthenticated) {
+      e.preventDefault();
+      setShowSignInModal(true);
+      return;
+    }
+    handleSubmit(e);
+  };
 
   return (
     <>
@@ -34,7 +46,10 @@ export const ChatPage = ({ userName }: ChatProps) => {
         </div>
 
         <div className="border-t border-gray-700">
-          <form onSubmit={handleSubmit} className="mx-auto max-w-[65ch] p-4">
+          <form
+            onSubmit={handleFormSubmit}
+            className="mx-auto max-w-[65ch] p-4"
+          >
             <div className="flex gap-2">
               <input
                 value={input}
@@ -60,7 +75,10 @@ export const ChatPage = ({ userName }: ChatProps) => {
         </div>
       </div>
 
-      <SignInModal isOpen={false} onClose={() => {}} />
+      <SignInModal
+        isOpen={showSignInModal}
+        onClose={() => setShowSignInModal(false)}
+      />
     </>
   );
 };
