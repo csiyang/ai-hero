@@ -1,6 +1,15 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { Message } from "ai";
-import { Wrench, CheckCircle, Clock } from "lucide-react";
+import {
+  Wrench,
+  CheckCircle,
+  Clock,
+  Search,
+  FileText,
+  Database,
+  Globe,
+  ExternalLink,
+} from "lucide-react";
 
 export type MessagePart = NonNullable<Message["parts"]>[number];
 
@@ -41,6 +50,116 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
+const getToolIcon = (toolName: string) => {
+  const name = toolName.toLowerCase();
+  if (name.includes("search") || name.includes("query"))
+    return <Search className="size-4" />;
+  if (name.includes("file") || name.includes("read"))
+    return <FileText className="size-4" />;
+  if (name.includes("database") || name.includes("db"))
+    return <Database className="size-4" />;
+  if (name.includes("web") || name.includes("url"))
+    return <Globe className="size-4" />;
+  return <Wrench className="size-4" />;
+};
+
+const formatToolName = (toolName: string) => {
+  return toolName
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (str) => str.toUpperCase())
+    .trim();
+};
+
+const formatArguments = (args: Record<string, unknown>) => {
+  if (typeof args === "string") {
+    return args;
+  }
+
+  const formatted: string[] = [];
+
+  Object.entries(args).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      const formattedKey = key
+        .replace(/([A-Z])/g, " $1")
+        .replace(/^./, (str) => str.toUpperCase())
+        .trim();
+      if (typeof value === "string" && value.length > 100) {
+        formatted.push(`${formattedKey}: "${value.substring(0, 100)}..."`);
+      } else {
+        formatted.push(`${formattedKey}: ${JSON.stringify(value)}`);
+      }
+    }
+  });
+
+  return formatted.join(", ");
+};
+
+const formatResult = (result: unknown) => {
+  if (typeof result === "string") {
+    return result;
+  }
+
+  if (Array.isArray(result)) {
+    if (result.length === 0) return "No results found";
+    if (result.length === 1) return "1 result found";
+    return `${result.length} results found`;
+  }
+
+  if (typeof result === "object" && result !== null) {
+    const obj = result as Record<string, unknown>;
+    if (typeof obj.content === "string") return obj.content;
+    if (typeof obj.text === "string") return obj.text;
+    if (typeof obj.title === "string") return obj.title;
+    if (typeof obj.name === "string") return obj.name;
+
+    // Try to find a meaningful string property
+    const stringProps = Object.values(obj).filter(
+      (val) => typeof val === "string",
+    );
+    if (stringProps.length > 0) {
+      return stringProps[0]!;
+    }
+  }
+
+  return JSON.stringify(result);
+};
+
+const SourcePart = ({ part }: { part: MessagePart }) => {
+  if (part.type !== "source") return null;
+
+  const { source } = part;
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800/50 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Globe className="size-4 text-blue-400" />
+        <span className="text-sm font-medium text-gray-200">Source</span>
+      </div>
+
+      <div className="space-y-2">
+        {source.title && (
+          <div>
+            <span className="text-xs text-gray-400">Title:</span>
+            <span className="ml-2 text-sm text-gray-200">{source.title}</span>
+          </div>
+        )}
+        <div>
+          <span className="text-xs text-gray-400">URL:</span>
+          <a
+            href={source.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-2 flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+          >
+            {source.url}
+            <ExternalLink className="size-3" />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ToolInvocationPart = ({ part }: { part: MessagePart }) => {
   if (part.type !== "tool-invocation") return null;
 
@@ -62,54 +181,63 @@ const ToolInvocationPart = ({ part }: { part: MessagePart }) => {
   const getStatusText = () => {
     switch (toolInvocation.state) {
       case "partial-call":
-        return "Calling tool...";
+        return "Working on it...";
       case "call":
-        return `Called ${toolInvocation.toolName}`;
+        return `Using ${formatToolName(toolInvocation.toolName)}`;
       case "result":
-        return `Result from ${toolInvocation.toolName}`;
+        return `Found information using ${formatToolName(toolInvocation.toolName)}`;
       default:
-        return "Tool invocation";
+        return "Processing...";
     }
   };
 
   return (
-    <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800 p-3">
-      <div className="mb-2 flex items-center gap-2">
-        {getStatusIcon()}
-        <span className="text-sm font-medium text-gray-300">
+    <div className="mb-4 rounded-lg border border-gray-600 bg-gray-800/50 p-4">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {getStatusIcon()}
+          {toolInvocation.state === "result" &&
+            getToolIcon(toolInvocation.toolName)}
+        </div>
+        <span className="text-sm font-medium text-gray-200">
           {getStatusText()}
         </span>
       </div>
 
       {toolInvocation.state === "call" ||
       toolInvocation.state === "partial-call" ? (
-        <div className="space-y-2">
-          <div>
-            <span className="text-xs text-gray-400">Tool:</span>
-            <span className="ml-2 text-sm text-gray-200">
-              {toolInvocation.toolName}
-            </span>
-          </div>
-          <div>
-            <span className="text-xs text-gray-400">Arguments:</span>
-            <pre className="mt-1 rounded bg-gray-700 p-2 text-xs text-gray-200">
-              {JSON.stringify(toolInvocation.args, null, 2)}
-            </pre>
-          </div>
+        <div className="space-y-3">
+          {Object.keys(toolInvocation.args).length > 0 && (
+            <div className="rounded-md bg-gray-700/50 p-3">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+                What I&apos;m looking for
+              </div>
+              <div className="text-sm text-gray-200">
+                {formatArguments(toolInvocation.args)}
+              </div>
+            </div>
+          )}
         </div>
       ) : toolInvocation.state === "result" ? (
-        <div className="space-y-2">
-          <div>
-            <span className="text-xs text-gray-400">Tool:</span>
-            <span className="ml-2 text-sm text-gray-200">
-              {toolInvocation.toolName}
-            </span>
-          </div>
-          <div>
-            <span className="text-xs text-gray-400">Result:</span>
-            <pre className="mt-1 rounded bg-gray-700 p-2 text-xs text-gray-200">
-              {JSON.stringify(toolInvocation.result, null, 2)}
-            </pre>
+        <div className="space-y-3">
+          {Object.keys(toolInvocation.args).length > 0 && (
+            <div className="rounded-md bg-gray-700/50 p-3">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+                What I searched for
+              </div>
+              <div className="text-sm text-gray-200">
+                {formatArguments(toolInvocation.args)}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-md bg-gray-700/50 p-3">
+            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+              What I found
+            </div>
+            <div className="text-sm text-gray-200">
+              {formatResult(toolInvocation.result)}
+            </div>
           </div>
         </div>
       ) : null}
@@ -123,6 +251,8 @@ const MessagePartRenderer = ({ part }: { part: MessagePart }) => {
       return <Markdown>{part.text}</Markdown>;
     case "tool-invocation":
       return <ToolInvocationPart part={part} />;
+    case "source":
+      return <SourcePart part={part} />;
     default:
       return null;
   }

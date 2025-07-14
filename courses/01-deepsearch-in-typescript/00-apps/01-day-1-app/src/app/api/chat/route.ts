@@ -1,9 +1,7 @@
 import type { Message } from "ai";
 import { streamText, createDataStreamResponse } from "ai";
-import { z } from "zod";
 import { auth } from "~/server/auth";
 import { model } from "~/models";
-import { searchSerper } from "~/serper";
 
 export const maxDuration = 60;
 
@@ -25,11 +23,11 @@ export async function POST(request: Request) {
       const result = streamText({
         model,
         messages,
-        system: `You are a helpful AI assistant with access to web search capabilities. 
+        system: `You are a helpful AI assistant with access to web search capabilities through search grounding. 
 
-When users ask questions that require current information, facts, or recent events, you should use the search web tool to find relevant information.
+When users ask questions that require current information, facts, or recent events, you can use your built-in search capabilities to find relevant information.
 
-Always search the web when:
+Always search when:
 - Users ask about current events, news, or recent developments
 - Users ask for factual information that might be time-sensitive
 - Users ask about specific products, services, or companies
@@ -44,28 +42,11 @@ IMPORTANT: Always format URLs as markdown links using the [text](url) format. Ne
 
 If you cannot find relevant information through search, be honest about it and suggest alternative approaches.`,
         maxSteps: 10,
-        tools: {
-          searchWeb: {
-            parameters: z.object({
-              query: z.string().describe("The query to search the web for"),
-            }),
-            execute: async ({ query }: { query: string }, { abortSignal }) => {
-              const results = await searchSerper(
-                { q: query, num: 10 },
-                abortSignal,
-              );
-
-              return results.organic.map((result) => ({
-                title: result.title,
-                link: result.link,
-                snippet: result.snippet,
-              }));
-            },
-          },
-        },
       });
 
-      result.mergeIntoDataStream(dataStream);
+      result.mergeIntoDataStream(dataStream, {
+        sendSources: true,
+      });
     },
     onError: (e) => {
       console.error(e);
