@@ -136,25 +136,22 @@ const SourcePart = ({ part }: { part: MessagePart }) => {
         <span className="text-sm font-medium text-gray-200">Source</span>
       </div>
 
-      <div className="space-y-2">
-        {source.title && (
-          <div>
-            <span className="text-xs text-gray-400">Title:</span>
-            <span className="ml-2 text-sm text-gray-200">{source.title}</span>
-          </div>
-        )}
+      {source.title && (
         <div>
-          <span className="text-xs text-gray-400">URL:</span>
-          <a
-            href={source.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-2 flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
-          >
-            {source.url}
-            <ExternalLink className="size-3" />
-          </a>
+          <span className="text-xs text-gray-400">Title:</span>
+          <span className="ml-2 text-sm text-gray-200">{source.title}</span>
         </div>
+      )}
+      <div className="mt-2">
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-blue-400 underline hover:text-blue-300"
+        >
+          View Source
+          <ExternalLink className="size-3" />
+        </a>
       </div>
     </div>
   );
