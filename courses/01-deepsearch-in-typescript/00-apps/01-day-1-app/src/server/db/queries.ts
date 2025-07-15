@@ -1,6 +1,7 @@
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, desc, asc } from "drizzle-orm";
 import { db } from "./index";
-import { requests, users } from "./schema";
+import { requests, users, chats, messages } from "./schema";
+import type { Message } from "ai";
 
 const DAILY_REQUEST_LIMIT = 50; // Adjust this number as needed
 
@@ -57,4 +58,109 @@ export async function checkRateLimit(userId: string): Promise<{
     remaining,
     limit: DAILY_REQUEST_LIMIT,
   };
+}
+
+export async function upsertChat(opts: {
+  userId: string;
+  chatId: string;
+  title: string;
+  messages: Message[];
+}) {
+  const { userId, chatId, title, messages: messageList } = opts;
+
+  // Check if chat exists and belongs to user
+  const existingChat = await db
+    .select()
+    .from(chats)
+    .where(eq(chats.id, chatId))
+    .limit(1);
+
+  if (existingChat.length > 0) {
+    const chat = existingChat[0];
+    if (!chat) {
+      throw new Error("Chat not found");
+    }
+
+    // Chat exists, check if user has permission to modify it
+    if (chat.userId !== userId) {
+      throw new Error("You don't have permission to modify this chat");
+    }
+
+    // Chat exists and user has permission, delete existing messages and replace with new ones
+    await db.delete(messages).where(eq(messages.chatId, chatId));
+
+    // Update chat title and timestamp
+    await db
+      .update(chats)
+      .set({
+        title,
+        updatedAt: new Date(),
+      })
+      .where(eq(chats.id, chatId));
+  } else {
+    // Create new chat
+    await db.insert(chats).values({
+      id: chatId,
+      userId,
+      title,
+    });
+  }
+
+  // Insert all messages
+  if (messageList.length > 0) {
+    const messageValues = messageList.map((message, index) => ({
+      chatId,
+      role: message.role,
+      parts: message.content,
+      order: index,
+    }));
+
+    await db.insert(messages).values(messageValues);
+  }
+}
+
+export async function getChat(chatId: string, userId: string) {
+  // Get chat with messages, ensuring it belongs to the user
+  const chat = await db
+    .select()
+    .from(chats)
+    .where(and(eq(chats.id, chatId), eq(chats.userId, userId)))
+    .limit(1);
+
+  if (chat.length === 0) {
+    return null;
+  }
+
+  const chatMessages = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.chatId, chatId))
+    .orderBy(asc(messages.order));
+
+  // Convert back to Message format
+  const messageList: Message[] = chatMessages.map((msg) => ({
+    id: msg.id,
+    role: msg.role as "user" | "assistant" | "system",
+    content: msg.parts as string,
+  }));
+
+  return {
+    ...chat[0],
+    messages: messageList,
+  };
+}
+
+export async function getChats(userId: string) {
+  const userChats = await db
+    .select({
+      id: chats.id,
+      title: chats.title,
+      createdAt: chats.createdAt,
+      updatedAt: chats.updatedAt,
+    })
+    .from(chats)
+    .where(eq(chats.userId, userId))
+    .orderBy(desc(chats.updatedAt));
+
+  return userChats;
 }
