@@ -2,6 +2,7 @@ import type { Message } from "ai";
 import { streamText, createDataStreamResponse } from "ai";
 import { auth } from "~/server/auth";
 import { model } from "~/models";
+import { checkRateLimit, recordUserRequest } from "~/server/db/queries";
 
 export const maxDuration = 60;
 
@@ -16,9 +17,34 @@ export async function POST(request: Request) {
     messages: Array<Message>;
   };
 
+  // Check rate limit before processing the request
+  const rateLimit = await checkRateLimit(session.user.id);
+
+  if (!rateLimit.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: "Rate limit exceeded",
+        message: `You have exceeded your daily limit of ${rateLimit.limit} requests. Please try again tomorrow.`,
+        remaining: rateLimit.remaining,
+        limit: rateLimit.limit,
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "X-RateLimit-Remaining": rateLimit.remaining.toString(),
+          "X-RateLimit-Limit": rateLimit.limit.toString(),
+        },
+      },
+    );
+  }
+
   return createDataStreamResponse({
     execute: async (dataStream) => {
       const { messages } = body;
+
+      // Record the request before processing
+      await recordUserRequest(session.user.id);
 
       const result = streamText({
         model,
