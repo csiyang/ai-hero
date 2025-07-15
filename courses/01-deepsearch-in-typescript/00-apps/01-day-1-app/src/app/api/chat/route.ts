@@ -74,6 +74,14 @@ export async function POST(request: Request) {
       // Record the request before processing
       await recordUserRequest(session.user.id);
 
+      // If this is a new chat (no chatId provided), send the new chat ID to the frontend
+      if (!chatId) {
+        dataStream.writeData({
+          type: "NEW_CHAT_CREATED",
+          chatId: finalChatId,
+        });
+      }
+
       const result = streamText({
         model,
         messages,
