@@ -1,17 +1,10 @@
 import { PlusIcon } from "lucide-react";
 import Link from "next/link";
+import { randomUUID } from "crypto";
 import { auth } from "~/server/auth/index.ts";
+import { getChats, getChat } from "~/server/db/queries.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
-
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
-
-const activeChatId = "1";
 
 export default async function HomePage({
   searchParams,
@@ -22,6 +15,20 @@ export default async function HomePage({
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+
+  // Generate a stable chatId - use the URL id if it exists, otherwise generate a new one
+  const chatId = id ?? randomUUID();
+  const isNewChat = !id;
+
+  // Fetch chats from database if user is authenticated
+  const chats =
+    isAuthenticated && session.user?.id ? await getChats(session.user.id) : [];
+
+  // Fetch specific chat if ID is provided and user is authenticated
+  let chatData = null;
+  if (id && isAuthenticated && session.user?.id) {
+    chatData = await getChat(id, session.user.id);
+  }
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -36,7 +43,7 @@ export default async function HomePage({
                 className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 title="New Chat"
               >
-                <PlusIcon className="h-5 w-5" />
+                <PlusIcon className="size-5" />
               </Link>
             )}
           </div>
@@ -46,9 +53,9 @@ export default async function HomePage({
             chats.map((chat) => (
               <div key={chat.id} className="flex items-center gap-2">
                 <Link
-                  href={`/?chatId=${chat.id}`}
+                  href={`/?id=${chat.id}`}
                   className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === activeChatId
+                    chat.id === id
                       ? "bg-gray-700"
                       : "hover:bg-gray-750 bg-gray-800"
                   }`}
@@ -74,9 +81,12 @@ export default async function HomePage({
       </div>
 
       <ChatPage
+        key={chatId}
         userName={userName}
         isAuthenticated={isAuthenticated}
-        chatId={id}
+        chatId={chatId}
+        isNewChat={isNewChat}
+        initialMessages={chatData?.messages}
       />
     </div>
   );

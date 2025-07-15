@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useRouter } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
+import type { Message } from "ai";
+import { StickToBottom } from "use-stick-to-bottom";
 import { ChatMessage } from "~/components/chat-message";
 import { SignInModal } from "~/components/sign-in-modal";
 import { isNewChatCreated } from "~/utils";
@@ -11,16 +13,28 @@ import { isNewChatCreated } from "~/utils";
 interface ChatProps {
   userName: string;
   isAuthenticated: boolean;
-  chatId?: string;
+  chatId: string;
+  isNewChat: boolean;
+  initialMessages?: Message[];
+  onNewChatCreated?: (chatId: string) => void;
 }
 
-export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
+export const ChatPage = ({
+  userName,
+  isAuthenticated,
+  chatId,
+  isNewChat,
+  initialMessages,
+  onNewChatCreated,
+}: ChatProps) => {
   const router = useRouter();
   const { messages, input, handleInputChange, handleSubmit, isLoading, data } =
     useChat({
       body: {
         chatId,
+        isNewChat,
       },
+      initialMessages,
     });
   const [showSignInModal, setShowSignInModal] = useState(false);
 
@@ -29,9 +43,12 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
     const lastDataItem = data?.[data.length - 1];
 
     if (lastDataItem && isNewChatCreated(lastDataItem)) {
-      router.push(`?id=${lastDataItem.chatId}`);
+      const newChatId = lastDataItem.chatId;
+      router.push(`?id=${newChatId}`);
+      // Notify parent component about the new chat
+      onNewChatCreated?.(newChatId);
     }
-  }, [data, router]);
+  }, [data, router, onNewChatCreated]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     if (!isAuthenticated) {
@@ -44,12 +61,12 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
 
   return (
     <>
-      <div className="flex flex-1 flex-col">
-        <div
-          className="mx-auto w-full max-w-[65ch] flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500"
-          role="log"
-          aria-label="Chat messages"
-        >
+      <StickToBottom
+        className="flex flex-1 flex-col [&>div]:scrollbar-thin [&>div]:scrollbar-track-gray-800 [&>div]:scrollbar-thumb-gray-600 [&>div]:hover:scrollbar-thumb-gray-500"
+        resize="smooth"
+        initial="smooth"
+      >
+        <StickToBottom.Content className="mx-auto w-full max-w-[65ch] flex-1 p-4">
           {messages.map((message, index) => {
             return (
               <ChatMessage
@@ -59,7 +76,7 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
               />
             );
           })}
-        </div>
+        </StickToBottom.Content>
 
         <div className="border-t border-gray-700">
           <form
@@ -89,7 +106,7 @@ export const ChatPage = ({ userName, isAuthenticated, chatId }: ChatProps) => {
             </div>
           </form>
         </div>
-      </div>
+      </StickToBottom>
 
       <SignInModal
         isOpen={showSignInModal}

@@ -11,7 +11,6 @@ import {
   recordUserRequest,
   upsertChat,
 } from "~/server/db/queries";
-import { randomUUID } from "crypto";
 
 export const maxDuration = 60;
 
@@ -24,10 +23,11 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as {
     messages: Array<Message>;
-    chatId?: string;
+    chatId: string;
+    isNewChat: boolean;
   };
 
-  const { messages, chatId } = body;
+  const { messages, chatId, isNewChat } = body;
 
   // Check rate limit before processing the request
   const rateLimit = await checkRateLimit(session.user.id);
@@ -51,21 +51,38 @@ export async function POST(request: Request) {
     );
   }
 
-  // Generate a chat ID if not provided
-  const finalChatId = chatId ?? randomUUID();
+  // Generate a title from the first user message (only for new chats)
+  let title: string | undefined;
+  if (isNewChat) {
+    const firstUserMessage = messages.find((msg) => msg.role === "user");
 
-  // Generate a title from the first user message
-  const firstUserMessage = messages.find((msg) => msg.role === "user");
-  const title = firstUserMessage?.content?.slice(0, 100) ?? "New Chat";
+    // Extract text content from parts if content is empty
+    title = "New Chat";
+    if (firstUserMessage) {
+      if (firstUserMessage.content && firstUserMessage.content.trim()) {
+        title = firstUserMessage.content.slice(0, 100);
+      } else if (firstUserMessage.parts && firstUserMessage.parts.length > 0) {
+        // Extract text from parts
+        const textPart = firstUserMessage.parts.find(
+          (part) => part.type === "text",
+        );
+        if (textPart && "text" in textPart) {
+          title = textPart.text.slice(0, 100);
+        }
+      }
+    }
+  }
 
   // Create or update the chat record immediately to protect against broken streams
   // We'll save the complete conversation (including user message) in onFinish
-  await upsertChat({
-    userId: session.user.id,
-    chatId: finalChatId,
-    title,
-    messages: [], // Don't save messages yet, save complete conversation in onFinish
-  });
+  if (isNewChat) {
+    await upsertChat({
+      userId: session.user.id,
+      chatId,
+      title,
+      messages: [], // Don't save messages yet, save complete conversation in onFinish
+    });
+  }
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
@@ -74,11 +91,11 @@ export async function POST(request: Request) {
       // Record the request before processing
       await recordUserRequest(session.user.id);
 
-      // If this is a new chat (no chatId provided), send the new chat ID to the frontend
-      if (!chatId) {
+      // If this is a new chat, send the new chat ID to the frontend
+      if (isNewChat) {
         dataStream.writeData({
           type: "NEW_CHAT_CREATED",
-          chatId: finalChatId,
+          chatId,
         });
       }
 
@@ -118,15 +135,26 @@ If you cannot find relevant information through search, be honest about it and s
           });
 
           // Save the complete conversation to the database
-          // This handles both new chats (created above) and existing chats
-          upsertChat({
-            userId: session.user.id,
-            chatId: finalChatId,
-            title,
-            messages: updatedMessages,
-          }).catch((error) => {
-            console.error("Failed to save chat:", error);
-          });
+          if (isNewChat) {
+            // For new chats, include the title
+            upsertChat({
+              userId: session.user.id,
+              chatId,
+              title,
+              messages: updatedMessages,
+            }).catch((error) => {
+              console.error("Failed to save chat:", error);
+            });
+          } else {
+            // For existing chats, only update messages, not title
+            upsertChat({
+              userId: session.user.id,
+              chatId,
+              messages: updatedMessages,
+            }).catch((error) => {
+              console.error("Failed to save chat:", error);
+            });
+          }
         },
       });
 

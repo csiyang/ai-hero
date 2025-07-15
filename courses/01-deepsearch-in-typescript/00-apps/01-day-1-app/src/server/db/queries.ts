@@ -63,7 +63,7 @@ export async function checkRateLimit(userId: string): Promise<{
 export async function upsertChat(opts: {
   userId: string;
   chatId: string;
-  title: string;
+  title?: string;
   messages: Message[];
 }) {
   const { userId, chatId, title, messages: messageList } = opts;
@@ -89,16 +89,23 @@ export async function upsertChat(opts: {
     // Chat exists and user has permission, delete existing messages and replace with new ones
     await db.delete(messages).where(eq(messages.chatId, chatId));
 
-    // Update chat title and timestamp
-    await db
-      .update(chats)
-      .set({
-        title,
-        updatedAt: new Date(),
-      })
-      .where(eq(chats.id, chatId));
+    // Update chat timestamp and title (only if provided)
+    const updateData: { updatedAt: Date; title?: string } = {
+      updatedAt: new Date(),
+    };
+    if (title !== undefined) {
+      updateData.title = title;
+    } else {
+      // Preserve the existing title if no new title is provided
+      updateData.title = chat.title;
+    }
+
+    await db.update(chats).set(updateData).where(eq(chats.id, chatId));
   } else {
-    // Create new chat
+    // Create new chat (title is required for new chats)
+    if (!title) {
+      throw new Error("Title is required for new chats");
+    }
     await db.insert(chats).values({
       id: chatId,
       userId,
@@ -138,18 +145,20 @@ export async function getChat(chatId: string, userId: string) {
     .orderBy(asc(messages.order));
 
   // Convert back to Message format
-  const messageList: Message[] = chatMessages.map((msg) => {
-    // Extract text content from parts for the content property
-    const parts = msg.parts as Message["parts"];
-    const textContent = parts?.[0]?.type === "text" ? parts[0].text : "";
-
-    return {
-      id: msg.id,
-      role: msg.role as "user" | "assistant" | "system",
-      parts,
-      content: textContent,
-    };
-  });
+  const messageList: Message[] = chatMessages.map((msg) => ({
+    id: msg.id,
+    // msg.role is typed as string, so we
+    // need to cast it to the correct type
+    role: msg.role as "user" | "assistant",
+    // msg.parts is typed as unknown[], so we
+    // need to cast it to the correct type
+    parts: msg.parts as Message["parts"],
+    // content is not persisted, so we can
+    // safely pass an empty string, because
+    // parts are always present, and the AI SDK
+    // will use the parts to construct the content
+    content: "",
+  }));
 
   return {
     ...chat[0],
