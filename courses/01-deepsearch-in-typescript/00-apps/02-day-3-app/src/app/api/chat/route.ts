@@ -68,6 +68,7 @@ export async function POST(request: Request) {
         model,
         messages,
         maxSteps: 10,
+        experimental_telemetry: { isEnabled: true },
         system: `You are a helpful AI assistant with access to real-time web search capabilities. When answering questions:
 
 1. Always search the web for up-to-date information when relevant
