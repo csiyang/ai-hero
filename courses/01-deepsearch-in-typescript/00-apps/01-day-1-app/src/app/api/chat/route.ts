@@ -121,6 +121,7 @@ IMPORTANT: Always format URLs as markdown links using the [text](url) format. Ne
 
 If you cannot find relevant information through search, be honest about it and suggest alternative approaches.`,
         maxSteps: 10,
+        experimental_telemetry: { isEnabled: true },
         onFinish({
           text: _text,
           finishReason: _finishReason,
