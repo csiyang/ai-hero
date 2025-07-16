@@ -7,6 +7,7 @@ import {
 import { model } from "~/model";
 import { auth } from "~/server/auth";
 import { searchSerper } from "~/serper";
+import { bulkCrawlWebsites } from "~/scraper";
 import { z } from "zod";
 import { upsertChat } from "~/server/db/queries";
 import { eq } from "drizzle-orm";
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
             langfuseTraceId: trace.id,
           },
         },
-        system: `You are a helpful AI assistant with access to real-time web search capabilities. When answering questions:
+        system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities. When answering questions:
 
 1. Always search the web for up-to-date information when relevant
 2. ALWAYS format URLs as markdown links using the format [title](url)
@@ -96,7 +97,25 @@ export async function POST(request: Request) {
 5. When providing information, always include the source where you found it using markdown links
 6. Never include raw URLs - always use markdown link format
 
-Remember to use the searchWeb tool whenever you need to find current information.`,
+Available tools:
+- searchWeb: Use this to search the web for current information. This returns search snippets.
+- scrapePages: Use this when you need the full content of specific web pages. This tool will:
+  * Fetch the complete HTML of the pages
+  * Check robots.txt to ensure crawling is allowed
+  * Extract the main content (removing navigation, ads, etc.)
+  * Convert the content to clean markdown format
+  * Handle rate limiting and retries automatically
+  * Cache results for performance
+
+Use scrapePages when:
+- You need detailed information from specific articles or pages
+- Search snippets don't provide enough detail
+- You want to analyze the full content of a webpage
+- You need to extract specific data or quotes from pages
+
+IMPORTANT: When using scrapePages, always scrape 4-6 URLs per query to get comprehensive information from diverse sources. This ensures you have multiple perspectives and detailed content from different websites. Don't just scrape 1-2 URLs - be thorough and gather information from multiple sources. Choose URLs from different domains and sources to get a well-rounded view of the topic.
+
+Remember to use the searchWeb tool for general searches and scrapePages for detailed content extraction.`,
         tools: {
           searchWeb: {
             parameters: z.object({
@@ -113,6 +132,35 @@ Remember to use the searchWeb tool whenever you need to find current information
                 link: result.link,
                 snippet: result.snippet,
               }));
+            },
+          },
+          scrapePages: {
+            parameters: z.object({
+              urls: z
+                .array(z.string())
+                .describe("Array of URLs to scrape and extract content from"),
+            }),
+            execute: async ({ urls }, { abortSignal: _abortSignal }) => {
+              const result = await bulkCrawlWebsites({ urls });
+
+              if (!result.success) {
+                return {
+                  error: result.error,
+                  results: result.results.map((r) => ({
+                    url: r.url,
+                    success: r.result.success,
+                    data: r.result.success ? r.result.data : r.result.error,
+                  })),
+                };
+              }
+
+              return {
+                success: true,
+                results: result.results.map((r) => ({
+                  url: r.url,
+                  data: r.result.data,
+                })),
+              };
             },
           },
         },
