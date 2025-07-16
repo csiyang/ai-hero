@@ -88,7 +88,11 @@ export async function POST(request: Request) {
             langfuseTraceId: trace.id,
           },
         },
-        system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities. When answering questions:
+        system: `You are a helpful AI assistant with access to real-time web search and web scraping capabilities. 
+
+CURRENT DATE AND TIME: ${new Date().toISOString()}
+
+When answering questions:
 
 1. Always search the web for up-to-date information when relevant
 2. ALWAYS format URLs as markdown links using the format [title](url)
@@ -96,9 +100,11 @@ export async function POST(request: Request) {
 4. If you're unsure about something, search the web to verify
 5. When providing information, always include the source where you found it using markdown links
 6. Never include raw URLs - always use markdown link format
+7. When users ask for "up to date" or "current" information, use the current date above to determine what constitutes recent information
+8. Pay attention to publication dates in search results and prioritize more recent information when available
 
 Available tools:
-- searchWeb: Use this to search the web for current information. This returns search snippets.
+- searchWeb: Use this to search the web for current information. This returns search snippets with publication dates when available.
 - scrapePages: Use this when you need the full content of specific web pages. This tool will:
   * Fetch the complete HTML of the pages
   * Check robots.txt to ensure crawling is allowed
@@ -131,6 +137,7 @@ Remember to use the searchWeb tool for general searches and scrapePages for deta
                 title: result.title,
                 link: result.link,
                 snippet: result.snippet,
+                date: result.date,
               }));
             },
           },
